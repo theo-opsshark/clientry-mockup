@@ -15,7 +15,8 @@ export default async function PortalLayout({
   return (
     <div className="flex min-h-screen" style={{ backgroundColor: "#0f0f13" }}>
       <PortalSidebar
-        isManager={user?.role === "manager"}
+        isManager={user?.role === "manager" || user?.role === "admin"}
+        isAdmin={user?.role === "admin"}
         userEmail={user?.email ?? null}
         portalName={portal?.name ?? null}
         portalLogoUrl={portal?.logoUrl ?? null}

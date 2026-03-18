@@ -21,7 +21,7 @@ export interface PortalUser {
   id: string;
   portal_id: string;
   email: string;
-  role: "user" | "manager";
+  role: "user" | "manager" | "admin";
   jira_org_id: string | null;
   created_at: string;
 }

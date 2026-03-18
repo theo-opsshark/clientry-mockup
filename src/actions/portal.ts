@@ -14,6 +14,11 @@ export interface PortalData {
  */
 const portalDataCache = new Map<string, PortalData>();
 
+/** Clear cached branding for a portal (called after admin updates branding) */
+export async function clearPortalDataCache(portalId: string): Promise<void> {
+  portalDataCache.delete(portalId);
+}
+
 function getServiceClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

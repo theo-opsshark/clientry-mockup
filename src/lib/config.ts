@@ -8,6 +8,11 @@ import type { JiraConfig } from "./jira";
  */
 const configCache = new Map<string, JiraConfig>();
 
+/** Clear cached config for a portal (called after admin updates Jira creds) */
+export function clearJiraConfigCache(portalId: string): void {
+  configCache.delete(portalId);
+}
+
 function getServiceClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -56,10 +61,21 @@ export async function getJiraConfig(
     );
   }
 
+  // Decrypt API token if encryption key is available
+  let apiToken = portal.jira_api_token;
+  const encryptionKey = process.env.PORTAL_ENCRYPTION_KEY;
+  if (encryptionKey) {
+    const { data: decrypted } = await supabase.rpc("decrypt_token", {
+      encrypted_value: apiToken,
+      encryption_key: encryptionKey,
+    });
+    if (decrypted) apiToken = decrypted;
+  }
+
   const config: JiraConfig = {
     baseUrl: portal.jira_site_url,
     email: portal.jira_email,
-    apiToken: portal.jira_api_token,
+    apiToken,
     serviceDeskId: portal.jira_service_desk_id,
   };
 

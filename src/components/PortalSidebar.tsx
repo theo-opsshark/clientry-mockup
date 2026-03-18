@@ -10,7 +10,8 @@ import {
   Users,
   LogOut,
   ChevronRight,
-  Layers
+  Layers,
+  Settings
 } from "lucide-react";
 import { signOut } from "@/actions/auth";
 
@@ -27,6 +28,7 @@ const managerItems = [
 
 interface PortalSidebarProps {
   isManager?: boolean;
+  isAdmin?: boolean;
   userEmail?: string | null;
   userName?: string | null;
   portalName?: string | null;
@@ -49,13 +51,13 @@ function getDisplayName(email: string): string {
   return local.charAt(0).toUpperCase() + local.slice(1);
 }
 
-export default function PortalSidebar({ isManager, userEmail, userName, portalName, portalLogoUrl, primaryColor = "#06b6d4" }: PortalSidebarProps) {
+export default function PortalSidebar({ isManager, isAdmin, userEmail, userName, portalName, portalLogoUrl, primaryColor = "#06b6d4" }: PortalSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
   const displayName = userName ?? (userEmail ? getDisplayName(userEmail) : (isManager ? "Mike Ross" : "Alex Johnson"));
   const brandName = portalName ?? "Client Portal";
-  const displayRole = isManager ? "Manager" : "End User";
+  const displayRole = isAdmin ? "Admin" : isManager ? "Manager" : "End User";
   const initials = getInitials(displayName);
 
   const isActive = (href: string) => {
@@ -151,6 +153,22 @@ export default function PortalSidebar({ isManager, userEmail, userName, portalNa
               <span className="flex-1">Manager View</span>
             </Link>
           </div>
+        )}
+
+        {isAdmin && (
+          <>
+            <div className="text-xs font-medium mt-4 mb-2 px-2" style={{ color: '#475569' }}>ADMIN</div>
+            <Link href="/portal/admin"
+              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all"
+              style={{
+                backgroundColor: isActive("/portal/admin") ? `${primaryColor}1F` : 'transparent',
+                color: isActive("/portal/admin") ? primaryColor : '#94a3b8',
+              }}>
+              <Settings size={16} />
+              <span className="flex-1">Settings</span>
+              {isActive("/portal/admin") && <ChevronRight size={14} />}
+            </Link>
+          </>
         )}
       </nav>
 

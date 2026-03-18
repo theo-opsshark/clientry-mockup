@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function ManagerDashboardPage() {
   const user = await getCurrentUser();
 
-  if (!user || user.role !== "manager") {
+  if (!user || (user.role !== "manager" && user.role !== "admin")) {
     redirect("/portal");
   }
 

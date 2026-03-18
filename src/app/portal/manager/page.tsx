@@ -11,7 +11,7 @@ export default async function ManagerPage() {
   const user = await getCurrentUser();
 
   // Role gate: only managers can access this page
-  if (!user || user.role !== "manager") {
+  if (!user || (user.role !== "manager" && user.role !== "admin")) {
     redirect("/portal");
   }
 

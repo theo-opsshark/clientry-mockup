@@ -65,7 +65,7 @@ export async function signOut(): Promise<void> {
  */
 export async function getCurrentUser(): Promise<{
   email: string;
-  role: "user" | "manager";
+  role: "user" | "manager" | "admin";
   portalId: string;
   jiraOrgId: string | null;
 } | null> {

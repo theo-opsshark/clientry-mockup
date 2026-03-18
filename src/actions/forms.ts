@@ -1,5 +1,6 @@
 "use server";
 
+import { createClient } from "@supabase/supabase-js";
 import { getJiraConfig } from "@/lib/config";
 import {
   getRequestTypes,
@@ -23,11 +24,53 @@ async function resolvePortalId(): Promise<string | null> {
 /**
  * Fetch portal-visible request types from JSM.
  * Filters out internal-only types (empty groupIds).
+ * If admin has configured visible request types, filters by those.
  */
 export async function getPortalRequestTypes(): Promise<RequestType[]> {
   const portalId = await resolvePortalId();
   const config = await getJiraConfig(portalId);
-  return getRequestTypes(config);
+  const allTypes = await getRequestTypes(config);
+
+  // Check if admin has configured request type visibility
+  if (!portalId) return allTypes;
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
+  const { data: portalTypes } = await supabase
+    .from("portal_request_types")
+    .select("jira_request_type_id, enabled, display_name, display_order")
+    .eq("portal_id", portalId);
+
+  // If no portal_request_types rows exist, show all (backward compatible)
+  if (!portalTypes || portalTypes.length === 0) return allTypes;
+
+  // Build a map of configured types
+  const configMap = new Map(
+    portalTypes.map((pt) => [pt.jira_request_type_id, pt])
+  );
+
+  // Filter to enabled types, apply display name overrides, sort by display_order
+  return allTypes
+    .filter((rt) => {
+      const config = configMap.get(rt.id);
+      // If not in config, default to enabled (show it)
+      return config ? config.enabled : true;
+    })
+    .map((rt) => {
+      const config = configMap.get(rt.id);
+      if (config?.display_name) {
+        return { ...rt, name: config.display_name };
+      }
+      return rt;
+    })
+    .sort((a, b) => {
+      const orderA = configMap.get(a.id)?.display_order ?? 999;
+      const orderB = configMap.get(b.id)?.display_order ?? 999;
+      return orderA - orderB;
+    });
 }
 
 /**
