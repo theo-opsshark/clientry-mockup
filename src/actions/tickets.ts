@@ -221,7 +221,7 @@ function formatFieldValue(value: unknown): string {
  */
 export async function getMyTickets(): Promise<TicketListItem[]> {
   const user = await getCurrentUser();
-  const config = getJiraConfig();
+  const config = await getJiraConfig(user?.portalId);
 
   // Try cache if authenticated
   if (user?.portalId && user.email) {
@@ -262,7 +262,7 @@ export async function getOrgTickets(
   organizationId: string
 ): Promise<TicketListItem[]> {
   const user = await getCurrentUser();
-  const config = getJiraConfig();
+  const config = await getJiraConfig(user?.portalId);
 
   // Try cache
   if (user?.portalId) {
@@ -293,7 +293,7 @@ export async function getTicketDetail(
   issueKey: string
 ): Promise<TicketDetail> {
   const user = await getCurrentUser();
-  const config = getJiraConfig();
+  const config = await getJiraConfig(user?.portalId);
 
   // Try cache
   if (user?.portalId) {
@@ -354,11 +354,9 @@ export async function addComment(
   issueKey: string,
   body: string
 ): Promise<{ id: string; author: string; createdFriendly: string }> {
-  const config = getJiraConfig();
-  const comment = await addRequestComment(config, issueKey, body);
-
-  // Invalidate cache — the ticket detail and list caches are now stale
   const user = await getCurrentUser();
+  const config = await getJiraConfig(user?.portalId);
+  const comment = await addRequestComment(config, issueKey, body);
   if (user?.portalId) {
     invalidateTicketCache(user.portalId, issueKey).catch(() => {
       /* swallow cache invalidation errors */

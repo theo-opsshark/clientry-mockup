@@ -29,6 +29,9 @@ interface PortalSidebarProps {
   isManager?: boolean;
   userEmail?: string | null;
   userName?: string | null;
+  portalName?: string | null;
+  portalLogoUrl?: string | null;
+  primaryColor?: string;
 }
 
 function getInitials(name: string): string {
@@ -46,11 +49,12 @@ function getDisplayName(email: string): string {
   return local.charAt(0).toUpperCase() + local.slice(1);
 }
 
-export default function PortalSidebar({ isManager, userEmail, userName }: PortalSidebarProps) {
+export default function PortalSidebar({ isManager, userEmail, userName, portalName, portalLogoUrl, primaryColor = "#06b6d4" }: PortalSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
   const displayName = userName ?? (userEmail ? getDisplayName(userEmail) : (isManager ? "Mike Ross" : "Alex Johnson"));
+  const brandName = portalName ?? "Client Portal";
   const displayRole = isManager ? "Manager" : "End User";
   const initials = getInitials(displayName);
 
@@ -72,13 +76,17 @@ export default function PortalSidebar({ isManager, userEmail, userName }: Portal
       {/* Company branding */}
       <div className="p-5 border-b" style={{ borderColor: '#1e1e2a' }}>
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg flex items-center justify-center"
-            style={{ backgroundColor: '#1e1e2a' }}>
-            <Building2 size={18} style={{ color: '#06b6d4' }} />
-          </div>
+          {portalLogoUrl ? (
+            <img src={portalLogoUrl} alt={brandName} className="w-9 h-9 rounded-lg object-contain" />
+          ) : (
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center"
+              style={{ backgroundColor: '#1e1e2a' }}>
+              <Building2 size={18} style={{ color: primaryColor }} />
+            </div>
+          )}
           <div>
-            <div className="font-semibold text-sm">Acme Corp</div>
-            <div className="text-xs" style={{ color: '#64748b' }}>Implementation Portal</div>
+            <div className="font-semibold text-sm">{brandName}</div>
+            <div className="text-xs" style={{ color: '#64748b' }}>Client Portal</div>
           </div>
         </div>
       </div>
@@ -87,7 +95,7 @@ export default function PortalSidebar({ isManager, userEmail, userName }: Portal
       <div className="px-4 py-3 border-b" style={{ borderColor: '#1e1e2a' }}>
         <div className="flex items-center gap-3">
           <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
-            style={{ backgroundColor: 'rgba(6,182,212,0.2)', color: '#06b6d4' }}>
+            style={{ backgroundColor: `${primaryColor}33`, color: primaryColor }}>
             {initials}
           </div>
           <div>
@@ -104,8 +112,8 @@ export default function PortalSidebar({ isManager, userEmail, userName }: Portal
           <Link key={href} href={href}
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all"
             style={{
-              backgroundColor: isActive(href) ? 'rgba(6,182,212,0.12)' : 'transparent',
-              color: isActive(href) ? '#06b6d4' : '#94a3b8',
+              backgroundColor: isActive(href) ? `${primaryColor}1F` : 'transparent',
+              color: isActive(href) ? primaryColor : '#94a3b8',
             }}>
             <Icon size={16} />
             <span className="flex-1">{label}</span>

@@ -13,11 +13,20 @@ import {
 import { getCurrentUser } from "./auth";
 
 /**
+ * Resolve the current user's portalId (null when AUTH_ENABLED=false).
+ */
+async function resolvePortalId(): Promise<string | null> {
+  const user = await getCurrentUser();
+  return user?.portalId ?? null;
+}
+
+/**
  * Fetch portal-visible request types from JSM.
  * Filters out internal-only types (empty groupIds).
  */
 export async function getPortalRequestTypes(): Promise<RequestType[]> {
-  const config = getJiraConfig();
+  const portalId = await resolvePortalId();
+  const config = await getJiraConfig(portalId);
   return getRequestTypes(config);
 }
 
@@ -28,7 +37,8 @@ export async function getPortalRequestTypes(): Promise<RequestType[]> {
 export async function getPortalRequestTypeFields(
   requestTypeId: string
 ): Promise<RequestTypeField[]> {
-  const config = getJiraConfig();
+  const portalId = await resolvePortalId();
+  const config = await getJiraConfig(portalId);
   const data = await getRequestTypeFields(config, requestTypeId);
 
   return data.requestTypeFields.filter(
@@ -42,7 +52,8 @@ export async function getPortalRequestTypeFields(
 export async function getPortalProformaForm(
   requestTypeId: string
 ): Promise<ProformaForm | null> {
-  const config = getJiraConfig();
+  const portalId = await resolvePortalId();
+  const config = await getJiraConfig(portalId);
   return getProformaForm(config, requestTypeId);
 }
 
@@ -55,7 +66,8 @@ export async function submitRequest(
   fieldValues: Record<string, unknown>,
   proformaFormId?: string
 ): Promise<{ issueKey: string; webUrl: string }> {
-  const config = getJiraConfig();
+  const user = await getCurrentUser();
+  const config = await getJiraConfig(user?.portalId);
 
   // Separate Proforma answers from standard Jira fields
   const jiraFields: Record<string, unknown> = {};
@@ -68,11 +80,9 @@ export async function submitRequest(
       const questionId = key.replace("proforma_", "");
       const strValue = String(value);
 
-      // Check if it's an array (checkbox_group)
       if (Array.isArray(value)) {
         proformaAnswers[questionId] = { choices: value.map(String) };
       } else {
-        // Could be a choice ID or free text — include both
         proformaAnswers[questionId] = { text: strValue };
       }
     } else {
@@ -80,8 +90,6 @@ export async function submitRequest(
     }
   }
 
-  // Use authenticated user's email for raiseOnBehalfOf when available
-  const user = await getCurrentUser();
   const result = await createRequest(
     config,
     requestTypeId,

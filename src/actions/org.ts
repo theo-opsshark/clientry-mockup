@@ -2,6 +2,7 @@
 
 import { getJiraConfig } from "@/lib/config";
 import { getOrganizations } from "@/lib/jira";
+import { getCurrentUser } from "./auth";
 
 /**
  * In-memory cache for org names (they rarely change).
@@ -18,7 +19,8 @@ export async function getOrgName(orgId: string): Promise<string> {
   if (cached) return cached;
 
   try {
-    const config = getJiraConfig();
+    const user = await getCurrentUser();
+    const config = await getJiraConfig(user?.portalId);
     const orgs = await getOrganizations(config);
     // Cache all orgs while we're at it
     for (const org of orgs.values) {
