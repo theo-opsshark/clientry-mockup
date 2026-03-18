@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Mail, Layers, ArrowRight, Building2, Loader2 } from "lucide-react";
 import { sendMagicLink } from "@/actions/auth";
+import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -11,6 +12,21 @@ export default function LoginPage() {
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Handle hash-based auth tokens (implicit flow fallback)
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash && hash.includes("access_token")) {
+      const supabase = createClient();
+      // Supabase client auto-detects hash tokens and sets session
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) {
+          router.push("/portal");
+          router.refresh();
+        }
+      });
+    }
+  }, [router]);
 
   async function handleSendLink() {
     if (!email.trim()) return;
