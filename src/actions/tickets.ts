@@ -1,5 +1,6 @@
 "use server";
 
+import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { getJiraConfig } from "@/lib/config";
 import {
   getMyRequests,
@@ -11,6 +12,8 @@ import {
   type JiraComment,
 } from "@/lib/jira";
 import { getCurrentUser } from "./auth";
+
+// ─── Types ───────────────────────────────────────────────────
 
 export interface TicketListItem {
   issueKey: string;
@@ -43,6 +46,130 @@ export interface TicketDetail {
   }>;
 }
 
+// ─── Cache Config ────────────────────────────────────────────
+
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function getServiceClient() {
+  return createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
+
+/**
+ * Check cache for a ticket list (stored under a synthetic key like "list:user:email" or "list:org:orgId").
+ * Returns null if not cached or stale.
+ */
+async function getCachedTickets(
+  portalId: string,
+  cacheKey: string
+): Promise<TicketListItem[] | null> {
+  const supabase = getServiceClient();
+  const { data } = await supabase
+    .from("ticket_cache")
+    .select("data, cached_at")
+    .eq("portal_id", portalId)
+    .eq("jira_key", cacheKey)
+    .single();
+
+  if (!data) return null;
+
+  const age = Date.now() - new Date(data.cached_at).getTime();
+  if (age > CACHE_TTL_MS) return null;
+
+  return data.data as TicketListItem[];
+}
+
+/**
+ * Store ticket list in cache.
+ */
+async function setCachedTickets(
+  portalId: string,
+  cacheKey: string,
+  tickets: TicketListItem[]
+): Promise<void> {
+  const supabase = getServiceClient();
+  await supabase.from("ticket_cache").upsert(
+    {
+      portal_id: portalId,
+      jira_key: cacheKey,
+      data: tickets,
+      cached_at: new Date().toISOString(),
+    },
+    { onConflict: "portal_id,jira_key" }
+  );
+}
+
+/**
+ * Check cache for a single ticket detail.
+ */
+async function getCachedDetail(
+  portalId: string,
+  issueKey: string
+): Promise<TicketDetail | null> {
+  const supabase = getServiceClient();
+  const { data } = await supabase
+    .from("ticket_cache")
+    .select("data, cached_at")
+    .eq("portal_id", portalId)
+    .eq("jira_key", `detail:${issueKey}`)
+    .single();
+
+  if (!data) return null;
+
+  const age = Date.now() - new Date(data.cached_at).getTime();
+  if (age > CACHE_TTL_MS) return null;
+
+  return data.data as TicketDetail;
+}
+
+/**
+ * Store single ticket detail in cache.
+ */
+async function setCachedDetail(
+  portalId: string,
+  issueKey: string,
+  detail: TicketDetail
+): Promise<void> {
+  const supabase = getServiceClient();
+  await supabase.from("ticket_cache").upsert(
+    {
+      portal_id: portalId,
+      jira_key: `detail:${issueKey}`,
+      data: detail,
+      cached_at: new Date().toISOString(),
+    },
+    { onConflict: "portal_id,jira_key" }
+  );
+}
+
+/**
+ * Invalidate cached data for a specific ticket (detail + any list caches).
+ */
+async function invalidateTicketCache(
+  portalId: string,
+  issueKey: string
+): Promise<void> {
+  const supabase = getServiceClient();
+  // Delete the detail cache entry
+  await supabase
+    .from("ticket_cache")
+    .delete()
+    .eq("portal_id", portalId)
+    .eq("jira_key", `detail:${issueKey}`);
+
+  // Also invalidate list caches (they contain stale status/data).
+  // Delete all list:* entries for this portal so next load fetches fresh.
+  await supabase
+    .from("ticket_cache")
+    .delete()
+    .eq("portal_id", portalId)
+    .like("jira_key", "list:%");
+}
+
+// ─── Helpers ─────────────────────────────────────────────────
+
 function extractSummary(request: JiraRequest): string {
   const summaryField = request.requestFieldValues?.find(
     (f) => f.fieldId === "summary"
@@ -57,16 +184,51 @@ function extractDescription(request: JiraRequest): string {
   return (descField?.value as string) ?? "";
 }
 
+function mapRequestToListItem(req: JiraRequest): TicketListItem {
+  return {
+    issueKey: req.issueKey,
+    summary: extractSummary(req),
+    status: req.currentStatus.status,
+    statusCategory: req.currentStatus.statusCategory,
+    reporter: req.reporter.displayName,
+    createdDate: req.createdDate.iso8601,
+    createdFriendly: req.createdDate.friendly,
+    updatedFriendly: req.currentStatus.statusDate.friendly,
+  };
+}
+
+function formatFieldValue(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return String(value);
+  if (typeof value === "object" && value !== null) {
+    if ("name" in value) return (value as { name: string }).name;
+    if ("value" in value) return (value as { value: string }).value;
+    if (Array.isArray(value)) {
+      return value.map((v) => formatFieldValue(v)).join(", ");
+    }
+  }
+  return String(value);
+}
+
+// ─── Public API ──────────────────────────────────────────────
+
 /**
  * Get the current user's tickets.
- * When authenticated, filters to only show tickets reported by the user.
- * When not authenticated (pre-auth dev), shows all tickets.
+ * Uses ticket_cache with 5-minute TTL.
  */
 export async function getMyTickets(): Promise<TicketListItem[]> {
-  const config = getJiraConfig();
-  const data = await getMyRequests(config);
   const user = await getCurrentUser();
+  const config = getJiraConfig();
 
+  // Try cache if authenticated
+  if (user?.portalId && user.email) {
+    const cacheKey = `list:user:${user.email.toLowerCase()}`;
+    const cached = await getCachedTickets(user.portalId, cacheKey);
+    if (cached) return cached;
+  }
+
+  const data = await getMyRequests(config);
   let requests = data.values;
 
   // Filter to user's own tickets when authenticated
@@ -77,54 +239,71 @@ export async function getMyTickets(): Promise<TicketListItem[]> {
     );
   }
 
-  return requests.map((req) => ({
-    issueKey: req.issueKey,
-    summary: extractSummary(req),
-    status: req.currentStatus.status,
-    statusCategory: req.currentStatus.statusCategory,
-    reporter: req.reporter.displayName,
-    createdDate: req.createdDate.iso8601,
-    createdFriendly: req.createdDate.friendly,
-    updatedFriendly: req.currentStatus.statusDate.friendly,
-  }));
+  const tickets = requests.map(mapRequestToListItem);
+
+  // Cache the result
+  if (user?.portalId && user.email) {
+    const cacheKey = `list:user:${user.email.toLowerCase()}`;
+    setCachedTickets(user.portalId, cacheKey, tickets).catch(() => {
+      /* swallow cache write errors */
+    });
+  }
+
+  return tickets;
 }
 
 /**
  * Get all tickets for an organization (manager view).
- * Uses hardcoded org ID for now — will use session after auth.
+ * Uses ticket_cache with 5-minute TTL.
  */
 export async function getOrgTickets(
   organizationId: string
 ): Promise<TicketListItem[]> {
+  const user = await getCurrentUser();
   const config = getJiraConfig();
-  const data = await getOrgRequests(config, organizationId);
 
-  return data.values.map((req) => ({
-    issueKey: req.issueKey,
-    summary: extractSummary(req),
-    status: req.currentStatus.status,
-    statusCategory: req.currentStatus.statusCategory,
-    reporter: req.reporter.displayName,
-    createdDate: req.createdDate.iso8601,
-    createdFriendly: req.createdDate.friendly,
-    updatedFriendly: req.currentStatus.statusDate.friendly,
-  }));
+  // Try cache
+  if (user?.portalId) {
+    const cacheKey = `list:org:${organizationId}`;
+    const cached = await getCachedTickets(user.portalId, cacheKey);
+    if (cached) return cached;
+  }
+
+  const data = await getOrgRequests(config, organizationId);
+  const tickets = data.values.map(mapRequestToListItem);
+
+  // Cache the result
+  if (user?.portalId) {
+    const cacheKey = `list:org:${organizationId}`;
+    setCachedTickets(user.portalId, cacheKey, tickets).catch(() => {
+      /* swallow cache write errors */
+    });
+  }
+
+  return tickets;
 }
 
 /**
  * Get full ticket detail including comments.
+ * Uses ticket_cache with 5-minute TTL.
  */
 export async function getTicketDetail(
   issueKey: string
 ): Promise<TicketDetail> {
+  const user = await getCurrentUser();
   const config = getJiraConfig();
+
+  // Try cache
+  if (user?.portalId) {
+    const cached = await getCachedDetail(user.portalId, issueKey);
+    if (cached) return cached;
+  }
 
   const [request, commentsData] = await Promise.all([
     getRequestByKey(config, issueKey),
     getRequestComments(config, issueKey),
   ]);
 
-  // Map additional fields (skip summary, description, attachment)
   const skipFields = new Set(["summary", "description", "attachment"]);
   const fields = (request.requestFieldValues ?? [])
     .filter((f) => !skipFields.has(f.fieldId))
@@ -141,7 +320,7 @@ export async function getTicketDetail(
     isPublic: c.public,
   }));
 
-  return {
+  const detail: TicketDetail = {
     issueKey: request.issueKey,
     summary: extractSummary(request),
     description: extractDescription(request),
@@ -154,10 +333,20 @@ export async function getTicketDetail(
     fields,
     comments,
   };
+
+  // Cache the result
+  if (user?.portalId) {
+    setCachedDetail(user.portalId, issueKey, detail).catch(() => {
+      /* swallow cache write errors */
+    });
+  }
+
+  return detail;
 }
 
 /**
  * Add a comment to a ticket.
+ * Invalidates the cache for the ticket so next load is fresh.
  */
 export async function addComment(
   issueKey: string,
@@ -165,27 +354,18 @@ export async function addComment(
 ): Promise<{ id: string; author: string; createdFriendly: string }> {
   const config = getJiraConfig();
   const comment = await addRequestComment(config, issueKey, body);
+
+  // Invalidate cache — the ticket detail and list caches are now stale
+  const user = await getCurrentUser();
+  if (user?.portalId) {
+    invalidateTicketCache(user.portalId, issueKey).catch(() => {
+      /* swallow cache invalidation errors */
+    });
+  }
+
   return {
     id: comment.id,
     author: comment.author.displayName,
     createdFriendly: comment.created.friendly,
   };
-}
-
-// ─── Helpers ─────────────────────────────────────────────────
-
-function formatFieldValue(value: unknown): string {
-  if (value === null || value === undefined) return "—";
-  if (typeof value === "string") return value;
-  if (typeof value === "number") return String(value);
-  if (typeof value === "object" && value !== null) {
-    // Jira option fields come as { value: "id", name: "label" }
-    if ("name" in value) return (value as { name: string }).name;
-    if ("value" in value) return (value as { value: string }).value;
-    // Arrays
-    if (Array.isArray(value)) {
-      return value.map((v) => formatFieldValue(v)).join(", ");
-    }
-  }
-  return String(value);
 }
