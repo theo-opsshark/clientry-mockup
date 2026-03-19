@@ -68,6 +68,8 @@ export async function getCurrentUser(): Promise<{
   role: "user" | "manager" | "admin";
   portalId: string;
   jiraOrgId: string | null;
+  firstName: string | null;
+  lastName: string | null;
 } | null> {
   const supabase = await createClient();
   const {
@@ -84,7 +86,7 @@ export async function getCurrentUser(): Promise<{
 
   const { data: portalUser } = await service
     .from("portal_users")
-    .select("role, portal_id, jira_org_id")
+    .select("role, portal_id, jira_org_id, first_name, last_name")
     .eq("email", user.email.toLowerCase())
     .single();
 
@@ -95,5 +97,40 @@ export async function getCurrentUser(): Promise<{
     role: portalUser.role,
     portalId: portalUser.portal_id,
     jiraOrgId: portalUser.jira_org_id,
+    firstName: portalUser.first_name,
+    lastName: portalUser.last_name,
   };
+}
+
+/**
+ * Update the current user's name (used during welcome flow on first login).
+ */
+export async function updateUserName(
+  firstName: string,
+  lastName: string
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user?.email) {
+    return { success: false, error: "Not authenticated." };
+  }
+
+  const service = createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
+  const { error } = await service
+    .from("portal_users")
+    .update({ first_name: firstName.trim(), last_name: lastName.trim() })
+    .eq("email", user.email.toLowerCase());
+
+  if (error) {
+    return { success: false, error: "Failed to update name." };
+  }
+
+  return { success: true };
 }

@@ -361,11 +361,42 @@ export async function updateRequestTypeVisibility(
   return { success: true };
 }
 
+/**
+ * Batch-update request type ordering. Accepts an array of { jiraId, displayOrder }.
+ */
+export async function updateRequestTypeOrder(
+  items: Array<{ jiraId: string; displayOrder: number }>
+): Promise<{ success: boolean }> {
+  const { portalId } = await requireAdmin();
+  const supabase = getServiceClient();
+
+  // Upsert all in parallel
+  await Promise.all(
+    items.map(({ jiraId, displayOrder }) =>
+      supabase
+        .from("portal_request_types")
+        .upsert(
+          {
+            portal_id: portalId,
+            jira_request_type_id: jiraId,
+            display_order: displayOrder,
+            enabled: true,
+          },
+          { onConflict: "portal_id,jira_request_type_id", ignoreDuplicates: false }
+        )
+    )
+  );
+
+  return { success: true };
+}
+
 // ─── Users ───────────────────────────────────────────────────
 
 export interface PortalUserInfo {
   id: string;
   email: string;
+  firstName: string | null;
+  lastName: string | null;
   role: "user" | "manager" | "admin";
   jiraOrgId: string | null;
   createdAt: string;
@@ -377,13 +408,15 @@ export async function getPortalUsers(): Promise<PortalUserInfo[]> {
 
   const { data: users } = await supabase
     .from("portal_users")
-    .select("id, email, role, jira_org_id, created_at")
+    .select("id, email, first_name, last_name, role, jira_org_id, created_at")
     .eq("portal_id", portalId)
     .order("created_at", { ascending: true });
 
   return (users ?? []).map((u) => ({
     id: u.id,
     email: u.email,
+    firstName: u.first_name,
+    lastName: u.last_name,
     role: u.role,
     jiraOrgId: u.jira_org_id,
     createdAt: u.created_at,

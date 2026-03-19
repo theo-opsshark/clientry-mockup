@@ -9,6 +9,7 @@ import {
   updateBranding,
   getAdminRequestTypes,
   updateRequestTypeVisibility,
+  updateRequestTypeOrder,
   getPortalUsers,
   inviteUser,
   removeUser,
@@ -378,10 +379,15 @@ function RequestTypesTab() {
   const [types, setTypes] = useState<AdminRequestType[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [updating, setUpdating] = useState<string | null>(null);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [savingOrder, setSavingOrder] = useState(false);
 
   async function loadTypes() {
     setLoading(true);
     const data = await getAdminRequestTypes();
+    // Sort by displayOrder
+    data.sort((a, b) => a.displayOrder - b.displayOrder);
     setTypes(data);
     setLoading(false);
   }
@@ -395,6 +401,41 @@ function RequestTypesTab() {
     setUpdating(null);
   }
 
+  function handleDragStart(index: number) {
+    setDragIndex(index);
+  }
+
+  function handleDragOver(e: React.DragEvent, index: number) {
+    e.preventDefault();
+    setDragOverIndex(index);
+  }
+
+  async function handleDrop(targetIndex: number) {
+    if (dragIndex === null || dragIndex === targetIndex || !types) return;
+
+    const updated = [...types];
+    const [moved] = updated.splice(dragIndex, 1);
+    updated.splice(targetIndex, 0, moved);
+
+    // Update displayOrder to match new positions
+    const reordered = updated.map((t, i) => ({ ...t, displayOrder: i }));
+    setTypes(reordered);
+    setDragIndex(null);
+    setDragOverIndex(null);
+
+    // Persist to DB
+    setSavingOrder(true);
+    await updateRequestTypeOrder(
+      reordered.map((t) => ({ jiraId: t.jiraId, displayOrder: t.displayOrder }))
+    );
+    setSavingOrder(false);
+  }
+
+  function handleDragEnd() {
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }
+
   // Load on first render
   if (types === null && !loading) {
     loadTypes();
@@ -402,9 +443,16 @@ function RequestTypesTab() {
 
   return (
     <div className="rounded-xl border p-6" style={{ backgroundColor: "#141418", borderColor: "#1e1e2a" }}>
-      <h2 className="text-lg font-semibold mb-1">Request Types</h2>
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-lg font-semibold">Request Types</h2>
+        {savingOrder && (
+          <span className="flex items-center gap-1.5 text-xs" style={{ color: "#64748b" }}>
+            <Loader2 size={12} className="animate-spin" /> Saving order...
+          </span>
+        )}
+      </div>
       <p className="text-sm mb-6" style={{ color: "#64748b" }}>
-        Choose which Jira request types are visible on your portal.
+        Drag to reorder. Toggle to show/hide on your portal.
       </p>
 
       {loading && (
@@ -421,26 +469,46 @@ function RequestTypesTab() {
 
       {types && types.length > 0 && (
         <div className="space-y-2">
-          {types.map((rt) => (
+          {types.map((rt, index) => (
             <div
               key={rt.jiraId}
-              className="flex items-center justify-between p-4 rounded-lg border transition-all"
+              draggable
+              onDragStart={() => handleDragStart(index)}
+              onDragOver={(e) => handleDragOver(e, index)}
+              onDrop={() => handleDrop(index)}
+              onDragEnd={handleDragEnd}
+              className="flex items-center gap-3 p-4 rounded-lg border transition-all"
               style={{
-                borderColor: "#1e1e2a",
-                backgroundColor: rt.enabled ? "rgba(6,182,212,0.04)" : "#0f0f13",
-                opacity: rt.enabled ? 1 : 0.6,
+                borderColor: dragOverIndex === index ? "#06b6d4" : "#1e1e2a",
+                backgroundColor: dragIndex === index
+                  ? "rgba(6,182,212,0.08)"
+                  : rt.enabled
+                    ? "rgba(6,182,212,0.04)"
+                    : "#0f0f13",
+                opacity: dragIndex === index ? 0.5 : rt.enabled ? 1 : 0.6,
+                cursor: "grab",
               }}
             >
-              <div>
+              {/* Drag handle */}
+              <div className="flex flex-col gap-0.5" style={{ color: "#475569" }}>
+                <div className="w-4 flex flex-col items-center gap-[3px]">
+                  <div className="w-3 h-[2px] rounded" style={{ backgroundColor: "#475569" }} />
+                  <div className="w-3 h-[2px] rounded" style={{ backgroundColor: "#475569" }} />
+                  <div className="w-3 h-[2px] rounded" style={{ backgroundColor: "#475569" }} />
+                </div>
+              </div>
+
+              <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium">{rt.name}</div>
                 {rt.description && (
-                  <div className="text-xs mt-0.5" style={{ color: "#64748b" }}>{rt.description}</div>
+                  <div className="text-xs mt-0.5 truncate" style={{ color: "#64748b" }}>{rt.description}</div>
                 )}
               </div>
+
               <button
-                onClick={() => handleToggle(rt)}
+                onClick={(e) => { e.stopPropagation(); handleToggle(rt); }}
                 disabled={updating === rt.jiraId}
-                className="relative w-11 h-6 rounded-full transition-colors"
+                className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
                 style={{ backgroundColor: rt.enabled ? "#06b6d4" : "#1e1e2a" }}
               >
                 <div
@@ -564,7 +632,7 @@ function UsersTab() {
           <table className="w-full">
             <thead>
               <tr style={{ borderBottom: "1px solid #1e1e2a" }}>
-                {["Email", "Role", "Invited", ""].map((h) => (
+                {["User", "Role", "Invited", ""].map((h) => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-medium" style={{ color: "#475569" }}>
                     {h}
                   </th>
@@ -574,7 +642,10 @@ function UsersTab() {
             <tbody>
               {users.map((u, i) => (
                 <tr key={u.id} style={{ borderBottom: i < users.length - 1 ? "1px solid #1a1a22" : "none" }}>
-                  <td className="px-4 py-3 text-sm">{u.email}</td>
+                  <td className="px-4 py-3">
+                    <div className="text-sm">{u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email}</div>
+                    {u.firstName && <div className="text-xs mt-0.5" style={{ color: "#475569" }}>{u.email}</div>}
+                  </td>
                   <td className="px-4 py-3">
                     <select
                       value={u.role}
