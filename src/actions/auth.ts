@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
-import { headers } from "next/headers";
+
 
 /**
  * Send a magic link to the given email.
@@ -34,8 +34,8 @@ export async function sendMagicLink(
 
   // Send OTP via Supabase Auth
   const supabase = await createClient();
-  const headersList = await headers();
-  const origin = headersList.get("origin") ?? "http://localhost:3000";
+  // Use server-configured URL, never trust the client's Origin header
+  const origin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
   const { error: otpError } = await supabase.auth.signInWithOtp({
     email: normalizedEmail,

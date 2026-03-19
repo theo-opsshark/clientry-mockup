@@ -213,6 +213,19 @@ function formatFieldValue(value: unknown): string {
   return String(value);
 }
 
+/**
+ * Check if a user can access a ticket.
+ * - Admins and managers can see all tickets in their portal.
+ * - Regular users can only see tickets they reported.
+ */
+function canAccessTicket(
+  user: { email: string; role: string },
+  reporterEmail: string
+): boolean {
+  if (user.role === "admin" || user.role === "manager") return true;
+  return user.email.toLowerCase() === reporterEmail?.toLowerCase();
+}
+
 // ─── Public API ──────────────────────────────────────────────
 
 /**
@@ -256,13 +269,21 @@ export async function getMyTickets(): Promise<TicketListItem[]> {
 
 /**
  * Get all tickets for an organization (manager view).
+ * Validates that the user's jiraOrgId matches the requested org.
  * Uses ticket_cache with 5-minute TTL.
  */
 export async function getOrgTickets(
   organizationId: string
 ): Promise<TicketListItem[]> {
   const user = await getCurrentUser();
-  const config = await getJiraConfig(user?.portalId);
+  if (!user) throw new Error("Not authenticated");
+
+  // Verify the user belongs to the requested org
+  if (user.jiraOrgId !== organizationId) {
+    throw new Error("You do not have access to this organization's tickets.");
+  }
+
+  const config = await getJiraConfig(user.portalId);
 
   // Try cache
   if (user?.portalId) {
@@ -287,24 +308,40 @@ export async function getOrgTickets(
 
 /**
  * Get full ticket detail including comments.
+ * Verifies the ticket belongs to the user (reporter match) or their org (manager).
  * Uses ticket_cache with 5-minute TTL.
  */
 export async function getTicketDetail(
   issueKey: string
 ): Promise<TicketDetail> {
+  // Validate issue key format (e.g., PROJ-123)
+  if (!/^[A-Z][A-Z0-9]+-\d+$/.test(issueKey)) {
+    throw new Error("Invalid issue key format.");
+  }
+
   const user = await getCurrentUser();
-  const config = await getJiraConfig(user?.portalId);
+  if (!user) throw new Error("Not authenticated");
+  const config = await getJiraConfig(user.portalId);
 
   // Try cache
-  if (user?.portalId) {
-    const cached = await getCachedDetail(user.portalId, issueKey);
-    if (cached) return cached;
+  const cached = await getCachedDetail(user.portalId, issueKey);
+  if (cached) {
+    // Verify access even on cache hit
+    if (!canAccessTicket(user, cached.reporterEmail)) {
+      throw new Error("You do not have access to this ticket.");
+    }
+    return cached;
   }
 
   const [request, commentsData] = await Promise.all([
     getRequestByKey(config, issueKey),
     getRequestComments(config, issueKey),
   ]);
+
+  // Verify the user can access this ticket
+  if (!canAccessTicket(user, request.reporter.emailAddress)) {
+    throw new Error("You do not have access to this ticket.");
+  }
 
   const skipFields = new Set(["summary", "description", "attachment"]);
   const fields = (request.requestFieldValues ?? [])
@@ -348,14 +385,30 @@ export async function getTicketDetail(
 
 /**
  * Add a comment to a ticket.
+ * Verifies the user has access before allowing the comment.
  * Invalidates the cache for the ticket so next load is fresh.
  */
 export async function addComment(
   issueKey: string,
   body: string
 ): Promise<{ id: string; author: string; createdFriendly: string }> {
+  if (!/^[A-Z][A-Z0-9]+-\d+$/.test(issueKey)) {
+    throw new Error("Invalid issue key format.");
+  }
+  if (!body.trim()) {
+    throw new Error("Comment body cannot be empty.");
+  }
+
   const user = await getCurrentUser();
-  const config = await getJiraConfig(user?.portalId);
+  if (!user) throw new Error("Not authenticated");
+  const config = await getJiraConfig(user.portalId);
+
+  // Verify the user can access this ticket before allowing a comment
+  const request = await getRequestByKey(config, issueKey);
+  if (!canAccessTicket(user, request.reporter.emailAddress)) {
+    throw new Error("You do not have access to this ticket.");
+  }
+
   const comment = await addRequestComment(config, issueKey, body);
   if (user?.portalId) {
     invalidateTicketCache(user.portalId, issueKey).catch(() => {

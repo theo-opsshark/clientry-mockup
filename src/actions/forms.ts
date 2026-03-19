@@ -180,9 +180,15 @@ async function submitProformaAnswers(
 
   const url = `https://api.atlassian.com/jira/forms/cloud/${cloudId}/issue/${issueId}/form/${formId}`;
 
-  await fetch(url, {
+  const res = await fetch(url, {
     method: "PUT",
     headers: getHeaders(config),
     body: JSON.stringify({ answers: formattedAnswers }),
   });
+
+  if (!res.ok) {
+    const body = await res.text();
+    console.error(`Proforma submission failed ${res.status}: ${body}`);
+    throw new Error("Failed to submit form answers. Your ticket was created but some form data may be missing.");
+  }
 }

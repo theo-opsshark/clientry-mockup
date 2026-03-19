@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link2, Palette, LayoutList, Users, CheckCircle2, AlertCircle, Loader2, Trash2, Plus } from "lucide-react";
 import {
   testJiraConnection,
@@ -437,9 +437,10 @@ function RequestTypesTab() {
   }
 
   // Load on first render
-  if (types === null && !loading) {
+  useEffect(() => {
     loadTypes();
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="rounded-xl border p-6" style={{ backgroundColor: "#141418", borderColor: "#1e1e2a" }}>
@@ -574,9 +575,10 @@ function UsersTab() {
     }
   }
 
-  if (users === null && !loading) {
+  useEffect(() => {
     loadUsers();
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="rounded-xl border p-6" style={{ backgroundColor: "#141418", borderColor: "#1e1e2a" }}>

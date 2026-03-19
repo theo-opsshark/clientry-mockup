@@ -189,12 +189,16 @@ export async function updateJiraConfig(
     encryption_key: encryptionKey,
   });
 
-  let tokenToStore = apiToken;
-  if (!encryptError && encrypted) {
-    tokenToStore = encrypted;
+  if (encryptError || !encrypted) {
+    // Do not store plaintext credentials — fail fast
+    console.error("Token encryption failed:", encryptError?.message);
+    return {
+      success: false,
+      error: "Failed to encrypt API token. Ensure pgcrypto is enabled in your database.",
+    };
   }
-  // If encryption fails (e.g., pgcrypto not enabled), store as-is with a warning
-  // This is a graceful degradation — better to work than to block setup
+
+  const tokenToStore = encrypted;
 
   const { error } = await supabase
     .from("portals")

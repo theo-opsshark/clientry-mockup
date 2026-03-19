@@ -389,19 +389,20 @@ export async function getRequestSlas(
 
 /**
  * Get the Atlassian cloud ID for this site.
- * Cached in-memory since it never changes.
+ * Cached per-baseUrl since different portals may connect to different Jira sites.
  */
-let cachedCloudId: string | null = null;
+const cloudIdCache = new Map<string, string>();
 
 async function getCloudId(config: JiraConfig): Promise<string> {
-  if (cachedCloudId) return cachedCloudId;
+  const cached = cloudIdCache.get(config.baseUrl);
+  if (cached) return cached;
   // _edge/tenant_info is public — no auth needed, always use direct site URL
   const res = await fetch(`${config.baseUrl}/_edge/tenant_info`, {
     cache: "no-store",
   });
   if (!res.ok) throw new Error("Failed to get cloud ID");
   const data = (await res.json()) as { cloudId: string };
-  cachedCloudId = data.cloudId;
+  cloudIdCache.set(config.baseUrl, data.cloudId);
   return data.cloudId;
 }
 
