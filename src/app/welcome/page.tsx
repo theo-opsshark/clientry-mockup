@@ -1,11 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Layers } from "lucide-react";
-import { updateUserName } from "@/actions/auth";
+import { updateUserName, getCurrentUser } from "@/actions/auth";
 
 export default function WelcomePage() {
+  const [authorized, setAuthorized] = useState(false);
+
+  useEffect(() => {
+    getCurrentUser().then((user) => {
+      if (!user) {
+        window.location.href = "/";
+      } else {
+        setAuthorized(true);
+      }
+    });
+  }, []);
   const router = useRouter();
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -21,12 +32,20 @@ export default function WelcomePage() {
     const result = await updateUserName(firstName, lastName);
 
     if (result.success) {
-      router.push("/portal");
-      router.refresh();
+      window.location.href = "/portal";
+      return;
     } else {
       setError(result.error ?? "Something went wrong.");
       setSaving(false);
     }
+  }
+
+  if (!authorized) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#0f0f13" }}>
+        <Loader2 size={24} className="animate-spin" style={{ color: "#06b6d4" }} />
+      </div>
+    );
   }
 
   return (
