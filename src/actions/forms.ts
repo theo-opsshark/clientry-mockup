@@ -139,7 +139,9 @@ export async function submitRequest(
     const displayName = user.firstName && user.lastName
       ? `${user.firstName} ${user.lastName}`
       : user.email;
-    await createOrFindCustomer(config, user.email, displayName);
+    console.log("[submitRequest] createOrFindCustomer:", user.email, "displayName:", displayName);
+    const custResult = await createOrFindCustomer(config, user.email, displayName);
+    console.log("[submitRequest] createOrFindCustomer result:", JSON.stringify(custResult));
   }
 
   const result = await createRequest(
