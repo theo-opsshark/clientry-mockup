@@ -432,6 +432,39 @@ export async function getProformaForm(
 }
 
 /**
+ * Add a user (by accountId) to a Jira organization.
+ */
+export async function addUserToOrganization(
+  config: JiraConfig,
+  orgId: string,
+  accountIds: string[]
+): Promise<{ success: boolean; error?: string }> {
+  const base = await getApiBase(config);
+  const url = `${base}/rest/servicedeskapi/organization/${orgId}/users`;
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        ...getAuthHeaders(config),
+      },
+      body: JSON.stringify({ accountIds }),
+      cache: "no-store",
+    });
+
+    // 204 = success, 200 = success
+    if (res.ok || res.status === 204) {
+      return { success: true };
+    }
+
+    const body = await res.text();
+    return { success: false, error: `Add to org API ${res.status}: ${body}` };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+/**
  * Create or find a JSM customer by email with a display name.
  * If the customer already exists, JSM returns 409 — we treat that as success.
  * This ensures raiseOnBehalfOf shows the customer's real name, not just their email.
@@ -440,7 +473,7 @@ export async function createOrFindCustomer(
   config: JiraConfig,
   email: string,
   displayName: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; accountId?: string; error?: string }> {
   const base = await getApiBase(config);
   const url = `${base}/rest/servicedeskapi/customer`;
 
@@ -455,14 +488,47 @@ export async function createOrFindCustomer(
       cache: "no-store",
     });
 
-    // 201 = created, 409 = already exists — both are fine
-    if (res.status === 201 || res.status === 409) {
-      return { success: true };
+    // 201 = created — parse response for accountId
+    if (res.status === 201) {
+      const data = (await res.json()) as { accountId: string };
+      return { success: true, accountId: data.accountId };
+    }
+
+    // 409 = already exists — need to look up accountId via user search
+    if (res.status === 409) {
+      const accountId = await findCustomerAccountId(config, email);
+      return { success: true, accountId: accountId ?? undefined };
     }
 
     const body = await res.text();
     return { success: false, error: `JSM customer API ${res.status}: ${body}` };
   } catch (err) {
     return { success: false, error: String(err) };
+  }
+}
+
+/**
+ * Look up a customer's accountId by email using Jira user search.
+ */
+async function findCustomerAccountId(
+  config: JiraConfig,
+  email: string
+): Promise<string | null> {
+  const base = await getApiBase(config);
+  const url = `${base}/rest/api/3/user/search?query=${encodeURIComponent(email)}`;
+
+  try {
+    const res = await fetch(url, {
+      headers: getAuthHeaders(config),
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const users = (await res.json()) as Array<{ accountId: string; emailAddress?: string }>;
+    const match = users.find(
+      (u) => u.emailAddress?.toLowerCase() === email.toLowerCase()
+    );
+    return match?.accountId ?? users[0]?.accountId ?? null;
+  } catch {
+    return null;
   }
 }

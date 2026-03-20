@@ -14,6 +14,7 @@ import {
   inviteUser,
   removeUser,
   updateUserRole,
+  getJiraOrganizations,
   type JiraConnectionStatus,
   type PortalBranding,
   type AdminRequestType,
@@ -535,6 +536,8 @@ function UsersTab() {
   const [loading, setLoading] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"user" | "manager" | "admin">("user");
+  const [inviteOrgId, setInviteOrgId] = useState("");
+  const [orgs, setOrgs] = useState<Array<{ id: string; name: string }>>([]);
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState("");
 
@@ -545,13 +548,23 @@ function UsersTab() {
     setLoading(false);
   }
 
+  async function loadOrgs() {
+    const data = await getJiraOrganizations();
+    setOrgs(data);
+  }
+
   async function handleInvite() {
     if (!inviteEmail.trim()) return;
     setInviting(true);
     setInviteError("");
-    const result = await inviteUser(inviteEmail, inviteRole);
+    const result = await inviteUser(
+      inviteEmail,
+      inviteRole,
+      inviteOrgId || undefined
+    );
     if (result.success) {
       setInviteEmail("");
+      setInviteOrgId("");
       loadUsers();
     } else {
       setInviteError(result.error ?? "Failed to invite user.");
@@ -577,6 +590,7 @@ function UsersTab() {
 
   useEffect(() => {
     loadUsers();
+    loadOrgs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -608,6 +622,19 @@ function UsersTab() {
           <option value="manager">Manager</option>
           <option value="admin">Admin</option>
         </select>
+        {orgs.length > 0 && (
+          <select
+            value={inviteOrgId}
+            onChange={(e) => setInviteOrgId(e.target.value)}
+            className="px-3 py-2 rounded-lg text-sm outline-none"
+            style={{ backgroundColor: "#0f0f13", border: "1px solid #1e1e2a", color: "#e2e8f0" }}
+          >
+            <option value="">No organization</option>
+            {orgs.map((org) => (
+              <option key={org.id} value={org.id}>{org.name}</option>
+            ))}
+          </select>
+        )}
         <button
           onClick={handleInvite}
           disabled={inviting || !inviteEmail.trim()}
@@ -634,7 +661,7 @@ function UsersTab() {
           <table className="w-full">
             <thead>
               <tr style={{ borderBottom: "1px solid #1e1e2a" }}>
-                {["User", "Role", "Invited", ""].map((h) => (
+                {["User", "Organization", "Role", "Invited", ""].map((h) => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-medium" style={{ color: "#475569" }}>
                     {h}
                   </th>
@@ -647,6 +674,9 @@ function UsersTab() {
                   <td className="px-4 py-3">
                     <div className="text-sm">{u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email}</div>
                     {u.firstName && <div className="text-xs mt-0.5" style={{ color: "#475569" }}>{u.email}</div>}
+                  </td>
+                  <td className="px-4 py-3 text-xs" style={{ color: "#94a3b8" }}>
+                    {u.jiraOrgId ? orgs.find((o) => o.id === u.jiraOrgId)?.name ?? u.jiraOrgId : "—"}
                   </td>
                   <td className="px-4 py-3">
                     <select

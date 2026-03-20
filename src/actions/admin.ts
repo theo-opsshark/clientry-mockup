@@ -2,7 +2,14 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { getCurrentUser } from "./auth";
-import { getRequestTypes, type RequestType } from "@/lib/jira";
+import { getJiraConfig } from "@/lib/config";
+import {
+  getRequestTypes,
+  getOrganizations,
+  createOrFindCustomer,
+  addUserToOrganization,
+  type RequestType,
+} from "@/lib/jira";
 
 // ─── Helpers ─────────────────────────────────────────────────
 
@@ -437,6 +444,22 @@ export async function getPortalUsers(): Promise<PortalUserInfo[]> {
   }));
 }
 
+/**
+ * Fetch Jira organizations for the admin's portal.
+ */
+export async function getJiraOrganizations(): Promise<
+  Array<{ id: string; name: string }>
+> {
+  const { portalId } = await requireAdmin();
+  try {
+    const config = await getJiraConfig(portalId);
+    const result = await getOrganizations(config);
+    return result.values ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function inviteUser(
   email: string,
   role: "user" | "manager" | "admin",
@@ -444,10 +467,12 @@ export async function inviteUser(
 ): Promise<{ success: boolean; error?: string }> {
   const { portalId } = await requireAdmin();
   const supabase = getServiceClient();
+  const normalizedEmail = email.toLowerCase().trim();
 
+  // Insert into portal_users
   const { error } = await supabase.from("portal_users").insert({
     portal_id: portalId,
-    email: email.toLowerCase().trim(),
+    email: normalizedEmail,
     role,
     jira_org_id: jiraOrgId || null,
   });
@@ -457,6 +482,22 @@ export async function inviteUser(
       return { success: false, error: "This email is already invited." };
     }
     return { success: false, error: "Failed to invite user." };
+  }
+
+  // Create customer in Jira and assign to org (best-effort, don't block invite)
+  try {
+    const config = await getJiraConfig(portalId);
+    const customerResult = await createOrFindCustomer(
+      config,
+      normalizedEmail,
+      normalizedEmail // use email as display name until they set their name
+    );
+
+    if (customerResult.success && customerResult.accountId && jiraOrgId) {
+      await addUserToOrganization(config, jiraOrgId, [customerResult.accountId]);
+    }
+  } catch {
+    // Jira provisioning is best-effort — don't fail the invite
   }
 
   return { success: true };
