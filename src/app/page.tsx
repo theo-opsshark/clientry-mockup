@@ -162,14 +162,15 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* Divider */}
+        {/* Demo shortcuts — hidden for now, enable via ?demo=true query param */}
+        {false && (
+        <>
         <div className="flex items-center gap-3 my-6">
           <div className="flex-1 h-px" style={{ backgroundColor: '#1e1e2a' }} />
           <span className="text-xs" style={{ color: '#475569' }}>or jump straight in</span>
           <div className="flex-1 h-px" style={{ backgroundColor: '#1e1e2a' }} />
         </div>
 
-        {/* Demo shortcuts */}
         <div className="space-y-3">
           <button
             onClick={() => handleStartDemo("user")}
@@ -202,6 +203,8 @@ export default function LoginPage() {
             )}
           </button>
         </div>
+        </>
+        )}
       </div>
 
       {/* Footer */}
