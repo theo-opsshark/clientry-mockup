@@ -466,34 +466,64 @@ export async function addUserToOrganization(
 
 /**
  * Add a customer to a specific service desk project by email.
- * Uses the usernames (email) field instead of accountIds so we don't
- * need Jira admin permission to create the customer first.
+ * First creates the customer account, then adds to the service desk.
+ * Both calls use X-ExperimentalApi header.
  */
 export async function addCustomerToServiceDesk(
   config: JiraConfig,
   emails: string[]
 ): Promise<{ success: boolean; error?: string }> {
   const base = await getApiBase(config);
-  const url = `${base}/rest/servicedeskapi/servicedesk/${config.serviceDeskId}/customer`;
 
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: getAuthHeaders(config),
-      body: JSON.stringify({ usernames: emails }),
-      cache: "no-store",
-    });
+  for (const email of emails) {
+    // Step 1: Create the customer account (or find existing)
+    const createUrl = `${base}/rest/servicedeskapi/customer`;
+    try {
+      const createRes = await fetch(createUrl, {
+        method: "POST",
+        headers: {
+          ...getAuthHeaders(config),
+          "X-ExperimentalApi": "opt-in",
+        },
+        body: JSON.stringify({ email, displayName: email }),
+        cache: "no-store",
+      });
 
-    // 204 = success, 200 = success
-    if (res.ok || res.status === 204) {
-      return { success: true };
+      let accountId: string | undefined;
+
+      if (createRes.status === 201) {
+        const data = (await createRes.json()) as { accountId: string };
+        accountId = data.accountId;
+        console.log("[addCustomerToSD] Created customer, accountId:", accountId);
+      } else if (createRes.status === 409) {
+        // Already exists — look up accountId
+        accountId = (await findCustomerAccountId(config, email)) ?? undefined;
+        console.log("[addCustomerToSD] Customer exists, accountId:", accountId);
+      } else {
+        const body = await createRes.text();
+        console.log("[addCustomerToSD] Create customer failed:", createRes.status, body);
+        return { success: false, error: `Create customer ${createRes.status}: ${body}` };
+      }
+
+      // Step 2: Add to the service desk
+      if (accountId) {
+        const addUrl = `${base}/rest/servicedeskapi/servicedesk/${config.serviceDeskId}/customer`;
+        const addRes = await fetch(addUrl, {
+          method: "POST",
+          headers: getAuthHeaders(config),
+          body: JSON.stringify({ accountIds: [accountId] }),
+          cache: "no-store",
+        });
+        const addBody = await addRes.text();
+        console.log("[addCustomerToSD] Add to service desk:", addRes.status, addBody);
+      }
+    } catch (err) {
+      console.error("[addCustomerToSD] Error:", String(err));
+      return { success: false, error: String(err) };
     }
-
-    const body = await res.text();
-    return { success: false, error: `Add to service desk API ${res.status}: ${body}` };
-  } catch (err) {
-    return { success: false, error: String(err) };
   }
+
+  return { success: true };
 }
 
 /**
