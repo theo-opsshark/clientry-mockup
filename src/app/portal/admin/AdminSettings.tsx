@@ -622,6 +622,7 @@ function UsersTab() {
           <option value="manager">Manager</option>
           <option value="admin">Admin</option>
         </select>
+        {/* TODO: re-enable org assignment when Jira admin perms are configured
         {orgs.length > 0 && (
           <select
             value={inviteOrgId}
@@ -635,6 +636,7 @@ function UsersTab() {
             ))}
           </select>
         )}
+        */}
         <button
           onClick={handleInvite}
           disabled={inviting || !inviteEmail.trim()}
@@ -661,7 +663,7 @@ function UsersTab() {
           <table className="w-full">
             <thead>
               <tr style={{ borderBottom: "1px solid #1e1e2a" }}>
-                {["User", "Organization", "Role", "Invited", ""].map((h) => (
+                {["User", "Role", "Invited", ""].map((h) => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-medium" style={{ color: "#475569" }}>
                     {h}
                   </th>
@@ -674,9 +676,6 @@ function UsersTab() {
                   <td className="px-4 py-3">
                     <div className="text-sm">{u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email}</div>
                     {u.firstName && <div className="text-xs mt-0.5" style={{ color: "#475569" }}>{u.email}</div>}
-                  </td>
-                  <td className="px-4 py-3 text-xs" style={{ color: "#94a3b8" }}>
-                    {u.jiraOrgId ? orgs.find((o) => o.id === u.jiraOrgId)?.name ?? u.jiraOrgId : "—"}
                   </td>
                   <td className="px-4 py-3">
                     <select

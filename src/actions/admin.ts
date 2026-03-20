@@ -490,37 +490,21 @@ export async function inviteUser(
     return { success: false, error: "Failed to invite user." };
   }
 
-  // Create customer in Jira and assign to org (best-effort, don't block invite)
-  // Try portal-specific config first, fall back to env vars
+  // Add customer to service desk in Jira (best-effort, don't block invite)
+  // Uses email-based endpoint — no Jira admin permission needed
   try {
     let config;
     try {
       config = await getJiraConfig(portalId);
-      console.log("[invite] Using portal-specific Jira config");
-    } catch (configErr) {
-      console.log("[invite] Portal config failed, falling back to env vars:", String(configErr));
+    } catch {
       config = await getJiraConfig(); // env-var fallback
     }
-    console.log("[invite] Jira config loaded, baseUrl:", config.baseUrl);
 
-    const customerResult = await createOrFindCustomer(
-      config,
-      normalizedEmail,
-      normalizedEmail // use email as display name until they set their name
-    );
-    console.log("[invite] createOrFindCustomer result:", JSON.stringify(customerResult));
+    const sdResult = await addCustomerToServiceDesk(config, [normalizedEmail]);
+    console.log("[invite] addCustomerToServiceDesk result:", JSON.stringify(sdResult));
 
-    if (customerResult.success && customerResult.accountId) {
-      // Add customer to the service desk project so they appear in the customer list
-      const sdResult = await addCustomerToServiceDesk(config, [customerResult.accountId]);
-      console.log("[invite] addCustomerToServiceDesk result:", JSON.stringify(sdResult));
-
-      // Assign to org if one was selected
-      if (jiraOrgId) {
-        const orgResult = await addUserToOrganization(config, jiraOrgId, [customerResult.accountId]);
-        console.log("[invite] addUserToOrganization result:", JSON.stringify(orgResult));
-      }
-    }
+    // TODO: org assignment requires accountId — re-enable when we have Jira admin perms
+    // if (jiraOrgId) { ... }
   } catch (err) {
     console.error("[invite] Jira provisioning failed:", String(err));
   }

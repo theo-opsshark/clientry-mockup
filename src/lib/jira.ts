@@ -465,12 +465,13 @@ export async function addUserToOrganization(
 }
 
 /**
- * Add a customer to a specific service desk project.
- * This makes them visible in the service desk's customer list.
+ * Add a customer to a specific service desk project by email.
+ * Uses the usernames (email) field instead of accountIds so we don't
+ * need Jira admin permission to create the customer first.
  */
 export async function addCustomerToServiceDesk(
   config: JiraConfig,
-  accountIds: string[]
+  emails: string[]
 ): Promise<{ success: boolean; error?: string }> {
   const base = await getApiBase(config);
   const url = `${base}/rest/servicedeskapi/servicedesk/${config.serviceDeskId}/customer`;
@@ -479,7 +480,7 @@ export async function addCustomerToServiceDesk(
     const res = await fetch(url, {
       method: "POST",
       headers: getAuthHeaders(config),
-      body: JSON.stringify({ accountIds }),
+      body: JSON.stringify({ usernames: emails }),
       cache: "no-store",
     });
 
