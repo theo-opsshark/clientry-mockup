@@ -55,7 +55,7 @@ export default function ConfirmationContent() {
             style={{ color: "#475569" }}
           />
           <p className="text-sm" style={{ color: "#94a3b8" }}>
-            We&apos;ll notify you when there&apos;s an update on this ticket.
+            You can track the status of this ticket from your dashboard.
           </p>
         </div>
       </div>
