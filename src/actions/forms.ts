@@ -1,16 +1,14 @@
 "use server";
 
 import { createClient } from "@supabase/supabase-js";
-import { getJiraConfig } from "@/lib/config";
 import {
   getRequestTypes,
   getRequestTypeFields,
-  getProformaForm,
   createRequest,
-  type RequestType,
-  type RequestTypeField,
-  type ProformaForm,
-} from "@/lib/jira";
+} from "@/lib/jira-backend";
+import { getProformaForm } from "@/lib/jira";
+import { getJiraConfig } from "@/lib/config";
+import type { RequestType, RequestTypeField, ProformaForm } from "@/lib/jira";
 import { getCurrentUser } from "./auth";
 
 /**
@@ -28,8 +26,7 @@ async function resolvePortalId(): Promise<string | null> {
  */
 export async function getPortalRequestTypes(): Promise<RequestType[]> {
   const portalId = await resolvePortalId();
-  const config = await getJiraConfig(portalId);
-  const allTypes = await getRequestTypes(config);
+  const allTypes = await getRequestTypes(portalId ?? "demo");
 
   // Check if admin has configured request type visibility
   if (!portalId) return allTypes;
@@ -81,8 +78,7 @@ export async function getPortalRequestTypeFields(
   requestTypeId: string
 ): Promise<RequestTypeField[]> {
   const portalId = await resolvePortalId();
-  const config = await getJiraConfig(portalId);
-  const data = await getRequestTypeFields(config, requestTypeId);
+  const data = await getRequestTypeFields(portalId ?? "demo", requestTypeId);
 
   return data.requestTypeFields.filter(
     (f) => f.visible && f.jiraSchema.items !== "attachment"
@@ -110,7 +106,7 @@ export async function submitRequest(
   proformaFormId?: string
 ): Promise<{ issueKey: string; webUrl: string }> {
   const user = await getCurrentUser();
-  const config = await getJiraConfig(user?.portalId);
+  const portalId = user?.portalId ?? "demo";
 
   // Separate Proforma answers from standard Jira fields
   const jiraFields: Record<string, unknown> = {};
@@ -136,7 +132,7 @@ export async function submitRequest(
   // raiseOnBehalfOf in createRequest auto-creates the Jira customer if needed.
   // We can't set display name without Jira Admin permission, so we skip that.
   const result = await createRequest(
-    config,
+    portalId,
     requestTypeId,
     jiraFields,
     user?.email
@@ -144,6 +140,7 @@ export async function submitRequest(
 
   // If we have Proforma answers and a form ID, submit them
   if (proformaFormId && Object.keys(proformaAnswers).length > 0) {
+    const config = await getJiraConfig(user?.portalId);
     await submitProformaAnswers(
       config,
       result.issueId,

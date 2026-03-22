@@ -1,7 +1,6 @@
 "use server";
 
-import { getJiraConfig } from "@/lib/config";
-import { getOrganizations } from "@/lib/jira";
+import { getOrganizations } from "@/lib/jira-backend";
 import { getCurrentUser } from "./auth";
 
 /**
@@ -20,9 +19,8 @@ export async function getOrgName(orgId: string): Promise<string> {
 
   try {
     const user = await getCurrentUser();
-    const config = await getJiraConfig(user?.portalId);
-    const orgs = await getOrganizations(config);
-    // Cache all orgs while we're at it
+    const portalId = user?.portalId ?? "demo";
+    const orgs = await getOrganizations(portalId);
     for (const org of orgs.values) {
       orgNameCache.set(org.id, org.name);
     }

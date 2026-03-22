@@ -2,8 +2,7 @@
 
 import { getMyTickets, getOrgTickets, type TicketListItem } from "./tickets";
 import { mapJiraStatus } from "@/lib/jira-field-mappers";
-import { getJiraConfig } from "@/lib/config";
-import { getRequestTypes } from "@/lib/jira";
+import { getRequestTypes } from "@/lib/jira-backend";
 import { getCurrentUser } from "./auth";
 
 // ─── Status colors (match StatusBadge and existing chart colors) ─────
@@ -156,10 +155,10 @@ export async function getManagerDashboardData(
   // Fetch tickets and request types in parallel
   // getRequestTypes() is called once per dashboard load, not per ticket
   const user = await getCurrentUser();
-  const config = await getJiraConfig(user?.portalId);
+  const portalId = user?.portalId ?? "demo";
   const [tickets, requestTypes] = await Promise.all([
     getOrgTickets(orgId),
-    getRequestTypes(config),
+    getRequestTypes(portalId),
   ]);
 
   if (tickets.length === 0) {

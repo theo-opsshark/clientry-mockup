@@ -4,10 +4,14 @@ import { createClient } from "@supabase/supabase-js";
 import { getCurrentUser } from "./auth";
 import { getJiraConfig } from "@/lib/config";
 import {
-  getRequestTypes,
-  getOrganizations,
+  getRequestTypes as getRequestTypesDirect,
+  getOrganizations as getOrganizationsDirect,
   type RequestType,
 } from "@/lib/jira";
+import {
+  getRequestTypes,
+  getOrganizations,
+} from "@/lib/jira-backend";
 
 // ─── Helpers ─────────────────────────────────────────────────
 
@@ -296,28 +300,9 @@ export async function getAdminRequestTypes(): Promise<AdminRequestType[]> {
   const { portalId } = await requireAdmin();
   const supabase = getServiceClient();
 
-  // Get portal's Jira config
-  const { data: portal } = await supabase
-    .from("portals")
-    .select("jira_site_url, jira_email, jira_api_token, jira_service_desk_id")
-    .eq("id", portalId)
-    .single();
-
-  if (!portal?.jira_site_url || !portal?.jira_email || !portal?.jira_api_token) {
-    return [];
-  }
-
-  // Fetch all request types from Jira
-  const config = {
-    baseUrl: portal.jira_site_url,
-    email: portal.jira_email,
-    apiToken: portal.jira_api_token,
-    serviceDeskId: portal.jira_service_desk_id,
-  };
-
   let jiraTypes: RequestType[];
   try {
-    jiraTypes = await getRequestTypes(config);
+    jiraTypes = await getRequestTypes(portalId);
   } catch {
     return [];
   }
@@ -450,13 +435,7 @@ export async function getJiraOrganizations(): Promise<
 > {
   const { portalId } = await requireAdmin();
   try {
-    let config;
-    try {
-      config = await getJiraConfig(portalId);
-    } catch {
-      config = await getJiraConfig(); // env-var fallback
-    }
-    const result = await getOrganizations(config);
+    const result = await getOrganizations(portalId);
     return result.values ?? [];
   } catch {
     return [];

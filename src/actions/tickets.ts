@@ -1,16 +1,14 @@
 "use server";
 
 import { createClient as createServiceClient } from "@supabase/supabase-js";
-import { getJiraConfig } from "@/lib/config";
 import {
   getMyRequests,
   getOrgRequests,
   getRequestByKey,
   getRequestComments,
   addRequestComment,
-  type JiraRequest,
-  type JiraComment,
-} from "@/lib/jira";
+} from "@/lib/jira-backend";
+import type { JiraRequest, JiraComment } from "@/lib/jira";
 import { getCurrentUser } from "./auth";
 
 // ─── Types ───────────────────────────────────────────────────
@@ -237,7 +235,7 @@ function canAccessTicket(
  */
 export async function getMyTickets(): Promise<TicketListItem[]> {
   const user = await getCurrentUser();
-  const config = await getJiraConfig(user?.portalId);
+  const portalId = user?.portalId ?? "demo";
 
   // Try cache if authenticated
   if (user?.portalId && user.email) {
@@ -246,7 +244,7 @@ export async function getMyTickets(): Promise<TicketListItem[]> {
     if (cached) return cached;
   }
 
-  const data = await getMyRequests(config);
+  const data = await getMyRequests(portalId);
   let requests = data.values;
 
   // Filter to user's own tickets when authenticated (skip for demo — show all)
@@ -286,8 +284,6 @@ export async function getOrgTickets(
     throw new Error("You do not have access to this organization's tickets.");
   }
 
-  const config = await getJiraConfig(user.portalId);
-
   // Try cache
   if (user?.portalId) {
     const cacheKey = `list:org:${organizationId}`;
@@ -295,7 +291,7 @@ export async function getOrgTickets(
     if (cached) return cached;
   }
 
-  const data = await getOrgRequests(config, organizationId);
+  const data = await getOrgRequests(user.portalId, organizationId);
   const tickets = data.values.map(mapRequestToListItem);
 
   // Cache the result
@@ -324,7 +320,6 @@ export async function getTicketDetail(
 
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated");
-  const config = await getJiraConfig(user.portalId);
 
   // Try cache
   const cached = await getCachedDetail(user.portalId, issueKey);
@@ -337,8 +332,8 @@ export async function getTicketDetail(
   }
 
   const [request, commentsData] = await Promise.all([
-    getRequestByKey(config, issueKey),
-    getRequestComments(config, issueKey),
+    getRequestByKey(user.portalId, issueKey),
+    getRequestComments(user.portalId, issueKey),
   ]);
 
   // Verify the user can access this ticket (demo users can see all)
@@ -404,15 +399,14 @@ export async function addComment(
 
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated");
-  const config = await getJiraConfig(user.portalId);
 
   // Verify the user can access this ticket before allowing a comment (demo users can access all)
-  const request = await getRequestByKey(config, issueKey);
+  const request = await getRequestByKey(user.portalId, issueKey);
   if (!user.isDemo && !canAccessTicket(user, request.reporter.emailAddress)) {
     throw new Error("You do not have access to this ticket.");
   }
 
-  const comment = await addRequestComment(config, issueKey, body);
+  const comment = await addRequestComment(user.portalId, issueKey, body);
   if (user?.portalId) {
     invalidateTicketCache(user.portalId, issueKey).catch(() => {
       /* swallow cache invalidation errors */

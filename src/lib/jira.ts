@@ -112,7 +112,7 @@ export interface CreatedRequest {
   };
 }
 
-interface PaginatedResponse<T> {
+export interface PaginatedResponse<T> {
   size: number;
   start: number;
   limit: number;
